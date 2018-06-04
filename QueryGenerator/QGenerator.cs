@@ -564,7 +564,12 @@ namespace " + (opt.Namespace ?? QGeneratorOptions.Default.Namespace) + @"
 
                 ftype = "VARCHAR2";
                 if (f.Size != 0)
-                    ftype += "(" + f.Size + ")";
+                {
+                    if (f.Size > 4000)
+                        ftype = "CLOB";
+                    else
+                        ftype += "(" + f.Size + ")";
+                }
                 else
                     throw new Exception("Size not set for string column: '" + f.FullName + "', hierarchy: " + GetPath(f, null));
             }
