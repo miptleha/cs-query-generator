@@ -1,6 +1,8 @@
-# csharp-query-generator
-Generation of sql scripts (creation and insertion) from cs-classes. Implemented for Oracle syntax.
+Generation of sql scripts (creation and insertion) from cs-classes. Implemented for Oracle syntax.  
+Each class described by own method StoreInfo(): mapping between properties in class and fields in db, hierarchy between classes (inheritance, contains single, contains list).  
+For storing in Oracle db uses [helper class](https://github.com/miptleha/cs-ora-dblayer)
 
+# Usage
 - Open QueryGenerator.sln in Visual Studio. 
 - Open Program.cs. It contains automatic tests, that creates sql-database and perform insertion of test data.
 - Set connection to Oracle in App.config
