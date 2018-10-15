@@ -62,7 +62,6 @@
     <Compile Include="QueryGenerator\QData.cs" />
     <Compile Include="QueryGenerator\QGenerator.cs" />
     <Compile Include="QueryGenerator\IQObject.cs" />
-    <Compile Include="QueryGenerator\QTexts.cs" />
     <Compile Include="Program.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
   </ItemGroup>
