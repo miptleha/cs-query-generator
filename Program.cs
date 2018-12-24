@@ -7,6 +7,7 @@ using System;
 using System.CodeDom.Compiler;
 using System.Collections.Generic;
 using System.Configuration;
+using System.Diagnostics;
 using System.IO;
 using System.Reflection;
 using System.Text;
@@ -63,11 +64,17 @@ namespace QueryGenerator
 
                 //---
 
+                log.Debug("Clear code folder");
+                if (!Directory.Exists(CodePath))
+                    Directory.CreateDirectory(CodePath);
+                foreach (var f in Directory.GetFiles(CodePath))
+                    File.Delete(f);
+
+                var sw = Stopwatch.StartNew();
                 foreach (var s in srcData)
                 {
                     var opt = new QGeneratorOptions
                     {
-                        Name = s.Name,
                         Namespace = nspace,
                         ClassName = s.Name + classNameSuffix,
                         MethodName = methodName,
@@ -91,8 +98,11 @@ namespace QueryGenerator
                     SaveFile("insert statements", files[2].Name, files[2].Encoding, data.InsertSql);
                     SaveFile("insert cs", files[3].Name, files[3].Encoding, data.InsertCs);
 
-                    TestGeneratedFiles(opt, files, s.TestObj, ignoreCsError, data.RootTableName);
+                    TestGeneratedFiles(opt, files, s.Name, s.TestObj, ignoreCsError, data.RootTableName);
                 }
+                sw.Stop();
+
+                log.Debug("All generation done, time elapsed: " + sw.Elapsed.ToString());
             }
             catch (Exception ex)
             {
@@ -103,10 +113,10 @@ namespace QueryGenerator
 
         static ILog log;
 
-        private static void TestGeneratedFiles(QGeneratorOptions opt, FileDesc[] files, object obj, bool ignoreCsError, string rootTableName)
+        private static void TestGeneratedFiles(QGeneratorOptions opt, FileDesc[] files, string name, object obj, bool ignoreCsError, string rootTableName)
         {
             log.Debug("Drop tables...");
-            string content = ReadFile(files[1].Name, files[1].Encoding);
+            string content = ReadFile(files[1].Name, files[1].Encoding, CodePath);
             var lines = content.Split(';');
             foreach (var l in lines)
             {
@@ -128,7 +138,8 @@ namespace QueryGenerator
             }
 
             log.Debug("Create tables...");
-            content = ReadFile(files[0].Name, files[0].Encoding);
+            content = ReadFile(files[0].Name, files[0].Encoding, CodePath);
+            content = Regex.Replace(content, @"/\*(.*?)*/", "", RegexOptions.Singleline);
             lines = content.Split(';');
             foreach (var l in lines)
             {
@@ -156,11 +167,11 @@ namespace QueryGenerator
 
             //load generated sql insert scripts (scan all xml files)
             log.Debug("Init DbExecuter...");
-            DbExecuter.Init(ExePath);
+            DbExecuter.Init(CodePath);
 
             //execute generated cs code
             log.Debug("Load cs code...");
-            content = ReadFile(files[3].Name, files[3].Encoding);
+            content = ReadFile(files[3].Name, files[3].Encoding, CodePath);
             var o = LoadCode(content, (opt.Namespace ?? QGeneratorOptions.Default.Namespace) + "." + (opt.ClassName ?? QGeneratorOptions.Default.ClassName));
             MethodInfo mi = o.GetType().GetMethod(opt.MethodName ?? QGeneratorOptions.Default.MethodName);
             log.Debug("Execute cs code...");
@@ -199,12 +210,8 @@ namespace QueryGenerator
             }
 
             log.Debug(@"
-
-++++++ All done for " + opt.Name + @", check test content in database (root table: " + rootTableName + @") ++++++
-Tables creation sql: " + files[0].Name + @"
-Tables droping sql: " + files[1].Name + @"
-Sql queries file: " + files[2].Name + @"
-Cs file: " + files[3].Name + "\n\n\n");
+++++++ Scripts and code tested for type: " + name + @"
+");
         }
 
         private static object LoadCode(string content, string cls)
@@ -258,10 +265,13 @@ Cs file: " + files[3].Name + "\n\n\n");
             return o;
         }
 
-        private static string ReadFile(string file, string encoding)
+        private static string ReadFile(string file, string encoding, string path = null)
         {
+            if (path == null)
+                path = ExePath;
+
             string content;
-            using (StreamReader sr = new StreamReader(Path.Combine(ExePath, file), Encoding.GetEncoding(encoding)))
+            using (StreamReader sr = new StreamReader(Path.Combine(path, file), Encoding.GetEncoding(encoding)))
             {
                 content = sr.ReadToEnd();
             }
@@ -270,7 +280,7 @@ Cs file: " + files[3].Name + "\n\n\n");
 
         private static void SaveFile(string info, string file, string encoding, string statement)
         {
-            string ctFile = Path.Combine(ExePath, file);
+            string ctFile = Path.Combine(CodePath, file);
             using (StreamWriter sw = new StreamWriter(ctFile, false, Encoding.GetEncoding(encoding)))
             {
                 sw.Write(statement);
@@ -278,11 +288,25 @@ Cs file: " + files[3].Name + "\n\n\n");
             log.Debug(info + " saved as: " + ctFile);
         }
 
+        static string _exePath;
         private static string ExePath
         {
             get
             {
-                return Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location);
+                if (_exePath == null)
+                    _exePath = Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location);
+                return _exePath;
+            }
+        }
+
+        static string _codePath;
+        private static string CodePath
+        {
+            get
+            {
+                if (_codePath == null)
+                    _codePath = Path.Combine(ExePath, "code");
+                return _codePath;
             }
         }
     }

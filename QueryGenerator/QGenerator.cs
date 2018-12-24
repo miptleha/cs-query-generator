@@ -58,6 +58,8 @@ namespace QueryGenerator
 
             //create table script
             string ct = "";
+            string ct2 = "";
+            string ct3 = "";
             foreach (var tab in data.Tables.Values)
             {
                 ct += "-- Create table\ncreate table " + tab.Name + "\n(\n";
@@ -195,19 +197,29 @@ namespace QueryGenerator
 
                 if (opt.GrantSchemas != null && opt.GrantSchemas.Length > 0)
                 {
-                    ct += "-- Grant priveleges\n";
+                    if (ct2.Length == 0)
+                    {
+                        ct2 += "\n-- Grant priveleges\n";
+                        ct3 += "\n-- Create synonyms\n/*\n";
+                    }
                     foreach (string schema in opt.GrantSchemas)
                     {
-                        ct += "grant select, insert, update, delete on " + tab.Name + " to " + schema + ";\n";
+                        ct2 += "grant select, insert, update, delete on " + tab.Name + " to " + schema + ";\n";
+                        ct3 += "create or replace synonym " + tab.Name + " for " + schema + "." + tab.Name + ";\n";
                         if (tab.Pk != null)
-                            ct += "grant select, alter on " + tab.Name + "_Seq to " + schema + ";\n";
+                        {
+                            ct2 += "grant select, alter on " + tab.Name + "_Seq to " + schema + ";\n";
+                            ct3 += "create or replace synonym " + tab.Name + "_Seq for " + schema + "." + tab.Name + "_Seq;\n";
+                        }
                     }
                 }
 
                 ct += "\n";
 
             }
-            res.CreateTablesSql = ct;
+            if (ct3.Length > 0)
+                ct3 += "*/";
+            res.CreateTablesSql = ct + ct2 + ct3;
 
             //insert statement as xml file
             string ins = "<?xml version=\"1.0\" encoding=\"UTF-8\" ?>\n<queries>\n";
