@@ -10,4 +10,4 @@ For storing in Oracle db uses [helper class](https://github.com/miptleha/cs-ora-
 - Set connection to Oracle in App.config
 - Run application: it creates tables for 2 test classes: AF/TestClass1.cs and AF/TestClass2.cs
 - See console or bin/Debug/QueryGenerator.log for errors and output messages
-- All generated code are stored in bin folder
+- All generated code are stored in bin/Debug/code folder
