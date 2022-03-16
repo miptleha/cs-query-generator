@@ -1,5 +1,8 @@
-﻿using System;
+﻿using Db;
+using Misc;
+using System;
 using System.Collections.Generic;
+using System.Data.Common;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
@@ -7,8 +10,9 @@ using System.Threading.Tasks;
 namespace QueryGenerator.AF
 {
     /** Simple class for generator with different types of fields */
-    public class TestClass1 : IQObject
+    public class TestClass1 : IQObject, IRow
     {
+        public decimal Id { get; set; }
         public string TextValue { get; set; }
         public decimal? NumberValue { get; set; }
         public DateTime? DateValue { get; set; }
@@ -31,5 +35,18 @@ namespace QueryGenerator.AF
                 new QField { Name = "dt", NameCs = "DateValue", Comment = "Date field", Type = QType.Date });
         }
 
+        public void Init(DbDataReader r, Dictionary<string, int> columns)
+        {
+            Init(r, columns, false);
+        }
+
+        public void Init(DbDataReader r, Dictionary<string, int> columns, bool nested)
+        {
+            if (!nested)
+                Id = Util.ToDecimal(r[nested ? "Id" : "Id"]);
+            TextValue = Util.ToStr(r["txt"]);
+            NumberValue = Util.ToDecimalNull(r["num"]);
+            DateValue = Util.ToDateNull(r["dt"]);
+        }
     }
 }

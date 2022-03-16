@@ -1,5 +1,8 @@
-﻿using System;
+﻿using Db;
+using Misc;
+using System;
 using System.Collections.Generic;
+using System.Data.Common;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
@@ -7,13 +10,26 @@ using System.Threading.Tasks;
 namespace QueryGenerator.AF
 {
     /** Sample of container for other class */
-    public class TestClass2 : IQObject
+    public class TestClass2 : IQObject, IRow
     {
         List<TestClass1> _listValue = new List<TestClass1>();
 
+        public decimal Id { get; set; }
         public List<TestClass1> ListValue { get { return _listValue; } }
         public TestClass1 SingleValue { get; set; }
         public string OwnValue { get; set; }
+
+        public void Init(DbDataReader r, Dictionary<string, int> columns)
+        {
+            Id = Util.ToDecimal(r["Id"]);
+
+            SingleValue = new TestClass1();
+            SingleValue.Init(r, columns, true);
+
+            OwnValue = Util.ToStr(r["OwnValue"]);
+
+            //list values loaded separatly (from another select)
+        }
 
         public void StoreInfo(QData data)
         {

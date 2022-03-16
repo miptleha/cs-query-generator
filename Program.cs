@@ -44,9 +44,14 @@ namespace QueryGenerator
                 DbExecuter.ConnectionString = ConfigurationManager.ConnectionStrings["DbConnection"].ConnectionString;
 
                 //--- set names, settings and objects here
-                var testObject1 = new TestClass1 { TextValue = "haha", NumberValue = 123, DateValue = DateTime.Now };
-                var testObject2 = new TestClass2 { SingleValue = testObject1, OwnValue = "own" };
-                testObject2.ListValue.AddRange(new TestClass1[] { testObject1, testObject1 });
+                var dt = DateTime.Now;
+                dt = new DateTime(dt.Year, dt.Month, dt.Day, dt.Hour, dt.Minute, dt.Second); //milliseconds not stored in db
+                var testObject1 = new TestClass1 { TextValue = "haha", NumberValue = 123, DateValue = dt };
+                var testObject11 = new TestClass1 { TextValue = "haha1", NumberValue = 1231, DateValue = dt.AddDays(1) };
+                var testObject12 = new TestClass1 { TextValue = "haha2", NumberValue = 1233, DateValue = dt.AddSeconds(1) };
+                var testObject13 = new TestClass1 { TextValue = "haha3", NumberValue = 1234, DateValue = dt.AddYears(1) };
+                var testObject2 = new TestClass2 { SingleValue = testObject13, OwnValue = "own" };
+                testObject2.ListValue.AddRange(new TestClass1[] { testObject11, testObject12 });
 
                 var srcData = new GeneratorData[]
                 {
@@ -56,7 +61,8 @@ namespace QueryGenerator
 
                 string nspace = "SampleProgram.Test";
                 string classNameSuffix = "Manager";
-                string methodName = "SaveObject";
+                string methodNameInsert = "SaveObject";
+                string methodNameSelect = "LoadObject";
                 QField[] additionFields = new QField[] { new QField { Name = "EnvelopeId", Type = QType.String, Size = 36, Comment = "Some guid" } };
                 string[] grantSchemas = null;
                 bool ignoreCsError = true;
@@ -77,7 +83,8 @@ namespace QueryGenerator
                     {
                         Namespace = nspace,
                         ClassName = s.Name + classNameSuffix,
-                        MethodName = methodName,
+                        MethodNameSelect = methodNameSelect,
+                        MethodNameInsert = methodNameInsert,
                         AdditionFields = additionFields,
                         GrantSchemas = grantSchemas
                     };
@@ -173,7 +180,8 @@ namespace QueryGenerator
             log.Debug("Load cs code...");
             content = ReadFile(files[3].Name, files[3].Encoding, CodePath);
             var o = LoadCode(content, (opt.Namespace ?? QGeneratorOptions.Default.Namespace) + "." + (opt.ClassName ?? QGeneratorOptions.Default.ClassName));
-            MethodInfo mi = o.GetType().GetMethod(opt.MethodName ?? QGeneratorOptions.Default.MethodName);
+            MethodInfo miIns = o.GetType().GetMethod(opt.MethodNameInsert ?? QGeneratorOptions.Default.MethodNameInsert);
+            MethodInfo miSel = o.GetType().GetMethod(opt.MethodNameSelect ?? QGeneratorOptions.Default.MethodNameSelect);
             log.Debug("Execute cs code...");
             var p = new List<object>();
             p.Add(obj);
@@ -199,15 +207,56 @@ namespace QueryGenerator
 
             try
             {
-                mi.Invoke(o, p.ToArray());
+                log.Debug("insert...");
+                miIns.Invoke(o, p.ToArray());
+
             }
             catch (Exception ex)
             {
                 if (ignoreCsError)
-                    log.Debug("Error execute cs: " + ex.Message);
+                    log.Debug("Error execute insert code: " + ex.Message);
                 else
                     throw;
             }
+
+            object obj2 = null;
+            try
+            {
+                log.Debug("select...");
+                var t = obj.GetType();
+                var pr = t.GetProperty("Id");
+                decimal id = (decimal)pr.GetValue(obj, null);
+                obj2 = miSel.Invoke(o, new object[] { id });
+            }
+            catch (Exception ex)
+            {
+                if (ignoreCsError)
+                    log.Debug("Error execute insert code: " + ex.Message);
+                else
+                    throw;
+            }
+
+            log.Debug("diff: " + ObjCompare.Comparer.Compare(obj, obj2));
+
+            //static compilation: add generated code (managers) to project root and uncomment code below
+            //if (opt.ClassName == "TestClass1Manager")
+            //{
+            //    log.Debug("static test");
+            //    var m = new SampleProgram.Test.TestClass1Manager();
+            //    var test1 = (TestClass1)obj;
+            //    m.SaveObject(test1, "qqqq");
+            //    var test2 = m.LoadObject(test1.Id);
+            //    log.Debug("diff: " + ObjCompare.Comparer.Compare(test1, test2));
+            //}
+            //else if (opt.ClassName == "TestClass2Manager")
+            //{
+            //    log.Debug("static test");
+            //    var m = new SampleProgram.Test.TestClass2Manager();
+            //    var test1 = (TestClass2)obj;
+            //    m.SaveObject(test1, "qqqq");
+            //    var test2 = m.LoadObject(test1.Id);
+            //    log.Debug("diff: " + ObjCompare.Comparer.Compare(test1, test2));
+            //}
 
             log.Debug(@"
 ++++++ Scripts and code tested for type: " + name + @"

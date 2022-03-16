@@ -59,6 +59,8 @@
     <Compile Include="Log\ILog.cs" />
     <Compile Include="Log\Logger.cs" />
     <Compile Include="Log\LogManager.cs" />
+    <Compile Include="Misc\Comparer.cs" />
+    <Compile Include="Misc\Util.cs" />
     <Compile Include="QueryGenerator\QData.cs" />
     <Compile Include="QueryGenerator\QGenerator.cs" />
     <Compile Include="QueryGenerator\IQObject.cs" />

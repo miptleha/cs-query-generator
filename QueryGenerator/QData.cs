@@ -14,6 +14,8 @@ namespace QueryGenerator
         public Dictionary<string, QTable> Tables { get { return _tabs; } }
         public QExtHierarchy Root { get { return _root; } }
 
+        public Type DataType { get; set; }
+
         /// <summary>
         /// Add description of class. Should by called recursively for child classes.
         /// </summary>
@@ -24,6 +26,27 @@ namespace QueryGenerator
         {
             if (string.IsNullOrWhiteSpace(tab.Name))
                 throw new Exception("Table name can not be empty");
+
+            if (h != null && h.DataType == null)
+            {
+                Type tParent = null;
+                if (h.Parent != null)
+                    tParent = h.Parent.DataType;
+                if (tParent == null)
+                    tParent = DataType;
+                if (tParent == null)
+                    throw new Exception("Can not calculate DataType for " + h.Path + ", table " + tab.Name);
+                var p = tParent.GetProperty(h.Name);
+                if (p == null)
+                    throw new Exception("Property " + h.Path + " not found for table " + tab.Name);
+                var type = p.PropertyType;
+                if (!p.CanWrite)
+                    h.ReadOnly = true;
+                if (type.IsGenericType)
+                    type = type.GenericTypeArguments[0];
+                h.DataType = type;
+            }
+
 
             foreach (var f in fields)
             {
@@ -252,6 +275,8 @@ namespace QueryGenerator
 
         public string Name { get; set; }
         public QHType Type { get; set; }
+        public Type DataType { get; set; }
+        public bool ReadOnly { get; set; }
         public QHierarchy Parent { get; set; }
 
         public string Path
@@ -308,6 +333,18 @@ namespace QueryGenerator
         {
             data.AddInfo(qt, h,
                 new QField { Name = "Value", NoNameCs = true, Type = QType.Number, Prefix = null, Comment = comment });
+        }
+    }
+
+    /// <summary>
+    /// Helper class for list of dates
+    /// </summary>
+    public class DateList
+    {
+        internal static void StoreInfo(QTable qt, QHierarchy h, string comment, QData data)
+        {
+            data.AddInfo(qt, h,
+                new QField { Name = "Value", NoNameCs = true, Type = QType.Date, Prefix = null, Comment = comment });
         }
     }
 }

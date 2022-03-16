@@ -21,7 +21,8 @@ namespace QueryGenerator
         public string Name { get; set; }
         public string Namespace { get; set; }
         public string ClassName { get; set; }
-        public string MethodName { get; set; }
+        public string MethodNameInsert { get; set; }
+        public string MethodNameSelect { get; set; }
         public string[] GrantSchemas { get; set; }
         public QField[] AdditionFields { get; set; }
 
@@ -29,7 +30,7 @@ namespace QueryGenerator
         {
             get
             {
-                return new QGeneratorOptions { Namespace = "Foo", ClassName = "Bar", MethodName = "CreateObject" };
+                return new QGeneratorOptions { Namespace = "Foo", ClassName = "Bar", MethodNameInsert = "CreateObject", MethodNameSelect = "GetObject" };
             }
         }
     }
@@ -40,6 +41,7 @@ namespace QueryGenerator
         {
             //collect metadata from object
             var data = new QData();
+            data.DataType = obj.GetType();
             obj.StoreInfo(data);
 
             //generate sql and cs code
@@ -298,6 +300,7 @@ namespace QueryGenerator
                     ins += " returning " + tab.Pk + " into :" + tab.Pk;
                 ins += "</sql>\n";
 
+                ins += "  <sql name=\"select " + tab.Name + "\">select * from " + tab.Name + " where " + (tab.Fk == null ? tab.Pk + " = :" + tab.Pk : tab.Fk + " = :" + tab.Fk) + "</sql>\n\n";
             }
             ins += "</queries>";
             ins = CheckLineLen(ins);
@@ -315,9 +318,18 @@ namespace QueryGenerator
             }
 
             string cs = "";
+            string cs1 = "";
             if (data.Root.Table.Pk != null)
                 cs += "var pId = new DbParam { Name = \"" + data.Root.Table.Pk + "\", Output = true };\n";
-            AddList(ref cs, data.Root, 0, opt.AdditionFields);
+            cs1 += 
+@"var log = Log.LogManager.GetLogger(this.GetType());
+" + data.DataType.FullName + " r = DbExecuter.SelectRow<" + obj.GetType().FullName + ">(\"select " + data.Root.Table.Name + "\", new DbParam { Name = \"" + data.Root.Table.Pk + "\", Value = id });\n";
+            cs1 += "if (r == null)\n throw new Exception(\"Object not found\");\n";
+
+            AddList(ref cs, ref cs1, data.Root, 0, data.DataType, opt.AdditionFields);
+
+            if (data.Root.Table.Pk != null)
+                cs += "obj.Id = decimal.Parse(pId.Value.ToString());\n";
 
             foreach (var t in data.Tables.Values)
             {
@@ -341,7 +353,7 @@ namespace " + (opt.Namespace ?? QGeneratorOptions.Default.Namespace) + @"
 {
     public class " + (opt.ClassName ?? QGeneratorOptions.Default.ClassName) + @"
     {
-        public void " + (opt.MethodName ?? QGeneratorOptions.Default.MethodName) + @"(" + obj.GetType().FullName + @" obj";
+        public void " + (opt.MethodNameInsert ?? QGeneratorOptions.Default.MethodNameInsert) + @"(" + obj.GetType().FullName + @" obj";
 
             if (opt.AdditionFields != null && opt.AdditionFields.Length > 0)
             {
@@ -367,8 +379,14 @@ namespace " + (opt.Namespace ?? QGeneratorOptions.Default.Namespace) + @"
         {
 " + cs + @"
         }
-    }
-}";
+
+";
+            res.InsertCs +=
+@"      public " + obj.GetType().FullName + " " + (opt.MethodNameSelect ?? QGeneratorOptions.Default.MethodNameSelect) + @"(decimal" + @" id)
+        {
+" + cs1 + @"
+return r;
+}" + "\n}\n}";
 
             return res;
         }
@@ -388,26 +406,58 @@ namespace " + (opt.Namespace ?? QGeneratorOptions.Default.Namespace) + @"
             }
         }
 
-        private static void AddChildrenList(ref string cs, List<QExtHierarchy> children, int num, QHierarchy p)
+        private static void AddChildrenList(ref string cs, ref string cs1, List<QExtHierarchy> children, int num, QHierarchy p)
         {
             foreach (var c in children)
             {
                 if (c.Hierarchy.Type != QHType.List)
                 {
-                    AddChildrenList(ref cs, c.Children, num, p);
+                    AddChildrenList(ref cs, ref cs1, c.Children, num, p);
                     continue;
                 }
 
+                if (c.Hierarchy.DataType == null)
+                    throw new Exception("DataType not set for " + c.Hierarchy.Path + " in " + c.Table.Name + " table");
+                string type = c.Hierarchy.DataType.FullName;
+                if (type == "System.String")
+                    type = "StringValue";
+                cs1 += "{\nvar o" + num + " = DbExecuter.Select<" + type + ">(\"select " + c.Table.Name + "\", new DbParam { Name = \"" + c.Table.Fk + "\", Value = " + (num == 0 ? "id" : "i" + (num - 1) + ".Id") + " });\n";
+                cs1 += "log.Debug(\"Found \" + o" + num + ".Count + \" records in " + c.Table.Name + "\");\n";
+                cs1 += @"foreach (var i" + num + " in o" + num + @")
+{
+    ";
                 cs += "if (" + GetPathList(num == 0 ? "obj" : "i" + num, c.Hierarchy, p) + ")\n";
                 cs += "foreach (var i" + (num + 1) + " in " + (num == 0 ? "obj" : "i" + num) + "." + GetPath(c.Hierarchy, p) + ")\n{\n";
                 if (c.Table.Pk != null)
                     cs += "    var pId" + (num + 1).ToString() + " = new DbParam { Name = \"" + c.Table.Pk + "\", Output = true };\n";
-                AddList(ref cs, c, num + 1);
+                AddList(ref cs, ref cs1, c, num + 1, null);
+                if (c.Table.Pk != null)
+                    cs += "i" + (num + 1).ToString() +".Id = decimal.Parse(pId" + (num + 1).ToString() + ".Value.ToString());\n";
                 cs += "\n}\n";
+
+                var h = c.Hierarchy;
+                string cs2 = "";
+                string path = "";
+                while (h != null && h != p)
+                {
+                    path = h.Name + (string.IsNullOrEmpty(path) ? "" : "." + path);
+                    if (h.Type == QHType.Member && !h.ReadOnly)
+                    {
+                        string path1 = h.Path;
+                        if (p != null)
+                            path1 = h.Path.Substring(p.Path.Length + 1);
+                        cs2 = @"if (" + (num == 0 ? "r" : "i" + (num - 1)) + "." + path1 + @" == null)
+    " + (num == 0 ? "r" : "i" + (num - 1)) + @"." + path1 + " = new " + h.DataType.FullName + "();\n" + cs2;
+                    }
+                    h = h.Parent;
+                }
+                cs1 += cs2;
+                cs1 += (num == 0 ? "r" : "i" + (num - 1)) + "." + path + @".Add(i" + num + (type == "StringValue" ? ".Value" : "") + @");
+}" + "\n}\n\n";
             }
         }
 
-        private static void AddList(ref string cs, QExtHierarchy c, int num, params QField[] additionFields)
+        private static void AddList(ref string cs, ref string cs1, QExtHierarchy c, int num, Type type, params QField[] additionFields)
         {
             cs += "DbExecuter.Execute(\"insert " + c.Table.Name + "\", false, false, \n";
 
@@ -438,7 +488,7 @@ namespace " + (opt.Namespace ?? QGeneratorOptions.Default.Namespace) + @"
             AddChildrenMember(ref cs, c.Children, num, c.Hierarchy);
             cs = cs.TrimEnd('\n', ',');
             cs += ");\n\n";
-            AddChildrenList(ref cs, c.Children, num, c.Hierarchy);
+            AddChildrenList(ref cs, ref cs1, c.Children, num, c.Hierarchy);
         }
 
         private static void AddFields(ref string cs, List<QField> fields, string obj, QHierarchy p, QTable t)
@@ -546,9 +596,14 @@ namespace " + (opt.Namespace ?? QGeneratorOptions.Default.Namespace) + @"
         private static int FindPosByChar(string str, int p, int size, params char[] cs)
         {
             string str1 = str.Substring(p, size);
+
+            int p1 = str1.LastIndexOf(',');
+            if (p1 > 0)
+                return p + p1 + 1;
+
             foreach (var c in cs)
             {
-                int p1 = str1.LastIndexOf(',');
+                p1 = str1.LastIndexOf(c);
                 if (p1 <= 0)
                     continue;
                 return p + p1 + 1;
